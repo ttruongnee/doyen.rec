@@ -24,14 +24,14 @@ const PALETTE = [
 ]
 
 const DEFAULT_CLASSES = [
-  { id: 'meoc', name: 'Mèo Con', times: ['05:00-07:00', '04:45-06:45', '07:00-09:00'], color: '#FF6B6B' },
-  { id: 'gautru', name: 'Gấu Trúc', times: ['06:30-08:30', '05:00-07:00'], color: '#51CF66' },
-  { id: 'cavoi', name: 'Cá Voi', times: ['07:00-09:00'], color: '#339AF0' },
-  { id: 'nguavan', name: 'Ngựa Vằn', times: ['04:30-06:30', '05:00-07:00'], color: '#FAB005' },
+  { id: 'meoc', name: 'Mèo Con', times: ['17:00-19:00', '16:45-18:45', '19:00-21:00'], color: '#FF6B6B' },
+  { id: 'gautru', name: 'Gấu Trúc', times: ['18:30-20:30', '17:00-19:00'], color: '#51CF66' },
+  { id: 'cavoi', name: 'Cá Voi', times: ['19:00-21:00'], color: '#339AF0' },
+  { id: 'nguavan', name: 'Ngựa Vằn', times: ['16:30-18:30', '17:00-19:00'], color: '#FAB005' },
 ]
 
 // Hardcoded fallback — used when user hasn't saved any default yet
-const FACTORY_DEFAULT_SALARY = { perSession: 250000, travel: 0, kpi: 0, holiday: 0 }
+const FACTORY_DEFAULT_SALARY = { perSession: 250000, travel: 150000, kpi: 0, holiday: 0 }
 
 // ─── Themes ───────────────────────────────────────────────────────────────────
 const T = {

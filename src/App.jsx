@@ -674,7 +674,7 @@ function DayModal({ year, month, day, dayKey, sessions, classes, onAdd, onRemove
 }
 
 // ─── SalaryTab ────────────────────────────────────────────────────────────────
-function SalaryTab({ year, month, setYear, setMonth, sched, classes, salaryExtra, setSalaryExtra, S: s }) {
+function SalaryTab({ year, month, setYear, setMonth, sched, classes, salaryExtra, setSalaryExtra, onSetDefault, isDefault, S: s }) {
   const prevMonth = () => { if (month === 1) { setYear(y => y - 1); setMonth(12) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setYear(y => y + 1); setMonth(1) } else setMonth(m => m + 1) }
 
@@ -683,15 +683,20 @@ function SalaryTab({ year, month, setYear, setMonth, sched, classes, salaryExtra
   const totalSalary = totalSess * perSession
   const totalNet = totalSalary + (salaryExtra.travel || 0) + (salaryExtra.kpi || 0) + (salaryExtra.holiday || 0)
 
-  const rows = Object.entries(sched).sort(([a], [b]) => a.localeCompare(b)).flatMap(([dayKey, sessions]) => {
-    const d = parseInt(dayKey.split('-')[2])
-    return sessions.map((s, i) => ({
-      dayLabel: i === 0 ? `${dayName(year, month, d)}-${d}/${month}` : '',
-      count: i === 0 ? sessions.length : null,
-      cls: classes.find(c => c.id === s.classId),
-      time: s.time, isFirst: i === 0, rowCount: sessions.length,
-    }))
-  })
+  // Group by day for rowSpan rendering
+  const dayGroups = Object.entries(sched)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([dayKey, sessions]) => {
+      const d = parseInt(dayKey.split('-')[2])
+      return {
+        dayLabel: `${dayName(year, month, d)}, ${d}/${month}`,
+        isSun: new Date(year, month - 1, d).getDay() === 0,
+        sessions: sessions.map(sess => ({
+          cls: classes.find(c => c.id === sess.classId),
+          time: sess.time,
+        })),
+      }
+    })
 
   const exportExcel = () => {
     const wb = XLSX.utils.book_new()
@@ -731,7 +736,7 @@ function SalaryTab({ year, month, setYear, setMonth, sched, classes, salaryExtra
   ]
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 800, margin: '0 auto' }}>
+    <div style={{ padding: '28px 40px', maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
         <Btn S={s} variant="ghost" style={{ padding: '7px 11px' }} onClick={prevMonth}><ChevronLeft size={16} /></Btn>
         <h2 style={{ fontWeight: 800, fontSize: 22, minWidth: 190, textAlign: 'center', color: s.text }}>{MONTH_NAMES[month]} {year}</h2>
@@ -752,40 +757,124 @@ function SalaryTab({ year, month, setYear, setMonth, sched, classes, salaryExtra
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, alignItems: 'start' }}>
+      {/* Main content: table (wider) + salary panel side-by-side */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 20, alignItems: 'start' }}>
+
+        {/* ── Schedule table with rowSpan ───────────────────────────── */}
         <div style={{ background: s.surface, border: `1.5px solid ${s.border}`, borderRadius: 14, overflow: 'hidden' }}>
-          {rows.length > 0 ? (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          {dayGroups.length > 0 ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '34%' }} />
+                <col style={{ width: '34%' }} />
+                <col style={{ width: '17%' }} />
+              </colgroup>
               <thead>
                 <tr style={{ background: s.s2 }}>
-                  {['Ngày', 'Lớp', 'Khung giờ', 'Số ca dạy'].map(h => (
-                    <th key={h} style={{ padding: '11px 15px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: s.muted, textTransform: 'uppercase', letterSpacing: 0.6 }}>{h}</th>
+                  {['Ngày', 'Lớp', 'Khung giờ', 'Số ca dạy'].map((h, hi) => (
+                    <th key={h} style={{
+                      padding: '13px 18px', textAlign: hi === 3 ? 'center' : 'left',
+                      fontSize: 11, fontWeight: 800, color: s.muted,
+                      textTransform: 'uppercase', letterSpacing: 0.7,
+                      borderBottom: `2px solid ${s.border}`,
+                    }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, i) => (
-                  <tr key={i} style={{ borderTop: `1px solid ${s.border}`, background: row.isFirst && row.rowCount > 1 ? s.accentBg : 'transparent' }}>
-                    <td style={{ padding: '10px 15px', fontWeight: row.isFirst ? 800 : 400, color: row.isFirst ? s.text : s.muted, whiteSpace: 'nowrap' }}>{row.dayLabel}</td>
-                    <td style={{ padding: '10px 15px' }}>
-                      {row.cls && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: row.cls.color, flexShrink: 0 }} />
-                          <span style={{ fontWeight: 700, color: s.text }}>{row.cls.name}</span>
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '10px 15px', color: s.muted, fontSize: 13 }}>{fmtTime(row.time)}</td>
-                    <td style={{ padding: '10px 15px', textAlign: 'center' }}>
-                      {row.count !== null && <span style={{ fontWeight: 800, fontSize: 15, color: s.accent }}>{row.count}</span>}
-                    </td>
-                  </tr>
-                ))}
+                {dayGroups.map((group, gi) => {
+                  const isMulti = group.sessions.length > 1
+                  const groupBg = isMulti ? `${s.accent}08` : 'transparent'
+                  return group.sessions.map((sess, si) => {
+                    const isFirstRow = si === 0
+                    const isLastRow = si === group.sessions.length - 1
+                    // top border: only on first row of each group
+                    const rowBorder = isFirstRow && gi > 0 ? `2px solid ${s.border}` : (isFirstRow ? 'none' : `1px solid ${s.border2}`)
+                    return (
+                      <tr key={`${gi}-${si}`} style={{ background: groupBg }}>
+
+                        {/* DAY — rowspan */}
+                        {isFirstRow && (
+                          <td rowSpan={group.sessions.length} style={{
+                            padding: '0 18px',
+                            borderTop: gi > 0 ? `2px solid ${s.border}` : 'none',
+                            borderRight: `1px solid ${s.border}`,
+                            verticalAlign: 'middle',
+                          }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                              {/* Weekday badge */}
+                              <span style={{
+                                fontSize: 10, fontWeight: 900, letterSpacing: 0.8,
+                                color: group.isSun ? s.red : s.accent,
+                                textTransform: 'uppercase',
+                              }}>
+                                {group.dayLabel.split(',')[0]}
+                              </span>
+                              <span style={{ fontWeight: 800, fontSize: 16, color: s.text, lineHeight: 1 }}>
+                                {group.dayLabel.split(',')[1]?.trim()}
+                              </span>
+
+                            </div>
+                          </td>
+                        )}
+
+                        {/* CLASS */}
+                        <td style={{
+                          padding: '12px 18px',
+                          borderTop: rowBorder,
+                          borderLeft: isFirstRow ? 'none' : `1px solid ${s.border2}`,
+                        }}>
+                          {sess.cls ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{
+                                width: 10, height: 10, borderRadius: '50%',
+                                background: sess.cls.color, flexShrink: 0,
+                                boxShadow: `0 0 0 3px ${sess.cls.color}25`,
+                              }} />
+                              <span style={{ fontWeight: 700, fontSize: 14, color: s.text }}>{sess.cls.name}</span>
+                            </div>
+                          ) : <span style={{ color: s.muted }}>—</span>}
+                        </td>
+
+                        {/* TIME */}
+                        <td style={{ padding: '12px 18px', borderTop: rowBorder }}>
+                          {sess.cls ? (
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              fontSize: 13, fontWeight: 700,
+                              color: sess.cls.color,
+                              background: `${sess.cls.color}14`,
+                              border: `1px solid ${sess.cls.color}35`,
+                              borderRadius: 7, padding: '4px 12px',
+                            }}>
+                              <Clock size={11} />
+                              {fmtTime(sess.time)}
+                            </span>
+                          ) : <span style={{ color: s.muted, fontSize: 13 }}>{fmtTime(sess.time)}</span>}
+                        </td>
+
+                        {/* COUNT — rowspan, only first row */}
+                        {isFirstRow && (
+                          <td rowSpan={group.sessions.length} style={{
+                            padding: '0 18px', textAlign: 'center', verticalAlign: 'middle',
+                            borderTop: gi > 0 ? `2px solid ${s.border}` : 'none',
+                            borderLeft: `1px solid ${s.border}`,
+                          }}>
+                            <span style={{ fontWeight: 800, fontSize: 15, color: s.text }}>
+                              {group.sessions.length}
+                            </span>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })
+                })}
               </tbody>
             </table>
           ) : (
-            <div style={{ padding: 48, textAlign: 'center', color: s.muted }}>
-              <AlertCircle size={30} style={{ opacity: 0.3, marginBottom: 10 }} />
+            <div style={{ padding: 64, textAlign: 'center', color: s.muted }}>
+              <AlertCircle size={32} style={{ opacity: 0.25, marginBottom: 12 }} />
               <p style={{ fontSize: 13 }}>Chưa có dữ liệu tháng này</p>
             </div>
           )}
@@ -1267,6 +1356,8 @@ function CalendarTab({ year, month, setYear, setMonth, sched, setSched, classes,
 }
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
+const DEFAULT_SALARY = { perSession: 250000, travel: 0, kpi: 0, holiday: 0 }
+
 export default function App() {
   const today = new Date()
   const [tab, setTab] = useState('calendar')
@@ -1275,9 +1366,16 @@ export default function App() {
   const [dark, setDark] = useState(() => load('tc_dark', true))
   const [classes, setClasses] = useState(() => load('tc_classes', DEFAULT_CLASSES).map(migrateClass))
   const [allSchedules, setAllSch] = useState(() => migrateSchedules(load('tc_schedules', {})))
-  const [salaryExtra, setSalaryExtra] = useState(() =>
-    load('tc_salary', { travel: 150000, kpi: 0, holiday: 0, perSession: 250000 })
-  )
+
+  // Per-month salary extras — keyed by "YYYY-MM"
+  // Migration: if old global tc_salary exists, seed it as the default template
+  const [allSalaryExtras, setAllSalaryExtras] = useState(() => {
+    const stored = load('tc_salary_extras', null)
+    if (stored) return stored
+    // First run: try to migrate the old global value
+    const legacy = load('tc_salary', null)
+    return legacy ? { _default: legacy } : {}
+  })
 
   const s = dark ? T.dark : T.light
 
@@ -1290,9 +1388,21 @@ export default function App() {
     })
   }, [monthKey])
 
+  // Current month's salary extras — falls back to _default (migrated) or DEFAULT_SALARY
+  const salaryExtra = allSalaryExtras[monthKey]
+    ?? allSalaryExtras['_default']
+    ?? DEFAULT_SALARY
+
+  const setSalaryExtra = useCallback(updater => {
+    setAllSalaryExtras(prev => {
+      const curr = prev[monthKey] ?? prev['_default'] ?? DEFAULT_SALARY
+      return { ...prev, [monthKey]: typeof updater === 'function' ? updater(curr) : updater }
+    })
+  }, [monthKey])
+
   useEffect(() => save('tc_classes', classes), [classes])
   useEffect(() => save('tc_schedules', allSchedules), [allSchedules])
-  useEffect(() => save('tc_salary', salaryExtra), [salaryExtra])
+  useEffect(() => save('tc_salary_extras', allSalaryExtras), [allSalaryExtras])
   useEffect(() => save('tc_dark', dark), [dark])
 
   const TABS = [

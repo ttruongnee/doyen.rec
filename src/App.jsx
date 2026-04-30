@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, Plus, X, Download, Copy,
   Settings, BookOpen, DollarSign, Calendar, Trash2,
   GripVertical, Check, AlertCircle, Pencil, Clock,
-  Sun, Moon, AlertTriangle,
+  Sun, Moon, AlertTriangle, Eye, EyeOff,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
@@ -63,6 +63,22 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catc
 const fmtTime = t => t
   ? t.replace(/^0(\d)/, '$1').replace(/-0(\d)/, '-$1')
   : t
+
+/**
+ * Returns array of weeks, each week is array of day numbers (1-based).
+ * Week index matches the calendar grid row.
+ */
+function getMonthWeeks(y, m) {
+  const dc = dim(y, m)
+  const firstDay = fdo(y, m) // 0=Sun
+  const weeks = []
+  for (let d = 1; d <= dc; d++) {
+    const wi = Math.floor((firstDay + d - 1) / 7)
+    if (!weeks[wi]) weeks[wi] = []
+    weeks[wi].push(d)
+  }
+  return weeks
+}
 
 // ─── Time migration (old "5-7h" → new "HH:MM-HH:MM") ─────────────────────────
 function migrateTimeStr(t) {
@@ -800,12 +816,140 @@ function SalaryTab({ year, month, setYear, setMonth, sched, classes, salaryExtra
   )
 }
 
+// ─── CopyWeekModal ────────────────────────────────────────────────────────────
+// Lets user pick which weeks from prev month to copy, aligned by weekday
+function CopyWeekModal({ year, month, prevSchedule, onCopy, onClose, S: s }) {
+  const pm = month === 1 ? 12 : month - 1
+  const py = month === 1 ? year - 1 : year
+  const prevWeeks = getMonthWeeks(py, pm)
+  const currWeeks = getMonthWeeks(year, month)
+
+  // Default: select all weeks that have sessions in prev month
+  const [selected, setSelected] = useState(() =>
+    prevWeeks.map((days, _wi) => days.some(d => prevSchedule[dk(py, pm, d)]?.length > 0))
+  )
+
+  const toggle = i => setSelected(p => p.map((v, j) => j === i ? !v : v))
+  const toggleAll = () => {
+    const anyOn = selected.some(Boolean)
+    setSelected(p => p.map(() => !anyOn))
+  }
+
+  const weekLabel = (days, y2, m2) => {
+    const first = days[0], last = days[days.length - 1]
+    const dn1 = WEEKDAYS[new Date(y2, m2 - 1, first).getDay()]
+    const dn2 = WEEKDAYS[new Date(y2, m2 - 1, last).getDay()]
+    return `${dn1} ${first}/${m2} – ${dn2} ${last}/${m2}`
+  }
+
+  const sessionCount = (days, y2, m2, sched) =>
+    days.reduce((n, d) => n + (sched[dk(y2, m2, d)]?.length || 0), 0)
+
+  const handleCopy = () => {
+    // For each selected week index, map weekdays from prev → curr
+    const mappings = [] // { srcKey, tgtKey }
+    selected.forEach((on, wi) => {
+      if (!on) return
+      const srcDays = prevWeeks[wi] || []
+      const tgtDays = currWeeks[wi] || []
+      srcDays.forEach(srcDay => {
+        const wd = new Date(py, pm - 1, srcDay).getDay()
+        const tgtDay = tgtDays.find(d => new Date(year, month - 1, d).getDay() === wd)
+        if (tgtDay) mappings.push({ srcKey: dk(py, pm, srcDay), tgtKey: dk(year, month, tgtDay) })
+      })
+    })
+    onCopy(mappings, prevSchedule)
+    onClose()
+  }
+
+  const anySelected = selected.some(Boolean)
+
+  return (
+    <Modal title={`Copy lịch từ ${MONTH_NAMES[pm]} → ${MONTH_NAMES[month]}`} onClose={onClose} S={s} width={440}>
+      <p style={{ fontSize: 12, color: s.muted, marginBottom: 16, lineHeight: 1.6 }}>
+        Lịch được copy theo đúng <strong style={{ color: s.text }}>thứ trong tuần</strong> — T2 sang T2, T3 sang T3, v.v.
+        Chọn tuần từ tháng trước cần copy:
+      </p>
+
+      {/* Select all toggle */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <button onClick={toggleAll} style={{
+          background: 'none', border: 'none', color: s.accent, cursor: 'pointer',
+          fontSize: 12, fontWeight: 700, padding: '3px 0', fontFamily: 'inherit',
+        }}>
+          {selected.some(Boolean) ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+        </button>
+      </div>
+
+      {/* Week list */}
+      <div style={{ display: 'grid', gap: 8, marginBottom: 20 }}>
+        {prevWeeks.map((srcDays, wi) => {
+          const tgtDays = currWeeks[wi] || []
+          const srcCount = sessionCount(srcDays, py, pm, prevSchedule)
+          const isOn = selected[wi]
+
+          return (
+            <div key={wi} onClick={() => toggle(wi)} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
+              borderRadius: 10, cursor: 'pointer', transition: 'all 0.12s',
+              background: isOn ? `${s.accent}14` : s.s2,
+              border: `1.5px solid ${isOn ? s.accent : s.border}`,
+              opacity: srcCount === 0 ? 0.45 : 1,
+            }}>
+              {/* Checkbox */}
+              <div style={{
+                width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                background: isOn ? s.accent : 'transparent',
+                border: `2px solid ${isOn ? s.accent : s.border}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.12s',
+              }}>
+                {isOn && <Check size={11} color={s.bg} strokeWidth={3} />}
+              </div>
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: s.text, marginBottom: 3 }}>
+                  Tuần {wi + 1}
+                </div>
+                <div style={{ fontSize: 11, color: s.muted }}>
+                  <span style={{ color: s.accent }}>{MONTH_NAMES[pm]}:</span> {weekLabel(srcDays, py, pm)}
+                </div>
+                {tgtDays.length > 0 && (
+                  <div style={{ fontSize: 11, color: s.muted }}>
+                    <span style={{ color: s.green }}>→ {MONTH_NAMES[month]}:</span> {weekLabel(tgtDays, year, month)}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                {srcCount > 0
+                  ? <span style={{ fontSize: 12, fontWeight: 800, color: isOn ? s.accent : s.muted }}>{srcCount} ca</span>
+                  : <span style={{ fontSize: 11, color: s.muted, fontStyle: 'italic' }}>trống</span>
+                }
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Btn S={s} variant="ghost" style={{ flex: 1 }} onClick={onClose}>Huỷ</Btn>
+        <Btn S={s} variant="primary" style={{ flex: 1 }} disabled={!anySelected} onClick={handleCopy}>
+          <Copy size={13} />Copy {selected.filter(Boolean).length} tuần
+        </Btn>
+      </div>
+    </Modal>
+  )
+}
+
 // ─── CalendarTab ──────────────────────────────────────────────────────────────
 function CalendarTab({ year, month, setYear, setMonth, sched, setSched, classes, allSchedules, salaryExtra, S: s }) {
   // dragging: { classId, time } | null
   const [dragging, setDragging] = useState(null)
   const [dragOver, setDragOver] = useState(null)
   const [modal, setModal] = useState(null)
+  const [showSalary, setShowSalary] = useState(false)
+  const [showCopyModal, setShowCopyModal] = useState(false)
   const { toasts, addToast, removeToast } = useToasts()
   const today = new Date()
 
@@ -843,19 +987,19 @@ function CalendarTab({ year, month, setYear, setMonth, sched, setSched, classes,
     setSched(p => ({ ...p, [dayKey]: (p[dayKey] || []).map(s => s.id === sid ? { ...s, time } : s) }))
   }
 
-  const copyPrevMonth = () => {
-    const pm = month === 1 ? 12 : month - 1, py = month === 1 ? year - 1 : year
-    const prev = allSchedules[mk(py, pm)] || {}
-    const dc = dim(year, month)
+  // Weekday-aligned copy: called from CopyWeekModal with pre-computed mappings
+  const applyWeekCopy = useCallback((mappings, prevSchedule) => {
     setSched(p => {
       const n = { ...p }
-      Object.entries(prev).forEach(([k, ss]) => {
-        const d = parseInt(k.split('-')[2])
-        if (d <= dc) { const nd = dk(year, month, d); if (!(n[nd]?.length > 0)) n[nd] = ss.map(s => ({ ...s, id: uid() })) }
+      mappings.forEach(({ srcKey, tgtKey }) => {
+        const sessions = prevSchedule[srcKey]
+        if (sessions?.length > 0 && !(n[tgtKey]?.length > 0)) {
+          n[tgtKey] = sessions.map(s => ({ ...s, id: uid() }))
+        }
       })
       return n
     })
-  }
+  }, [setSched])
   const copyPrevWeek = targetDay => {
     const dow = new Date(year, month - 1, targetDay).getDay(), ws = targetDay - dow, ps = ws - 7, dc = dim(year, month)
     setSched(p => {
@@ -934,7 +1078,7 @@ function CalendarTab({ year, month, setYear, setMonth, sched, setSched, classes,
         {/* Quick actions */}
         <div style={{ padding: '12px', borderTop: `1px solid ${s.border}` }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: s.muted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 }}>Nhanh</div>
-          <button onClick={copyPrevMonth} style={{
+          <button onClick={() => setShowCopyModal(true)} style={{
             width: '100%', marginBottom: 7, padding: '8px 10px', borderRadius: 9,
             background: 'transparent', border: `1.5px solid ${s.border}`, color: s.muted,
             cursor: 'pointer', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
@@ -942,7 +1086,7 @@ function CalendarTab({ year, month, setYear, setMonth, sched, setSched, classes,
           }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = s.accent; e.currentTarget.style.color = s.accent }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = s.border; e.currentTarget.style.color = s.muted }}>
-            <Copy size={12} />Copy tháng trước
+            <Copy size={12} />Copy tháng trước…
           </button>
         </div>
 
@@ -954,9 +1098,17 @@ function CalendarTab({ year, month, setYear, setMonth, sched, setSched, classes,
               <span style={{ fontWeight: 900, fontSize: 18, color: s.accent }}>{totalSess}</span>
             </div>
             <div style={{ height: 1, background: s.border, marginBottom: 6 }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: s.muted, fontWeight: 600 }}>Thực lĩnh</span>
-              <span style={{ fontWeight: 800, fontSize: 12, color: s.green }}>{fmt(totalNet)} đ</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontWeight: 800, fontSize: 12, color: s.green, letterSpacing: showSalary ? 0 : 1 }}>
+                  {showSalary ? `${fmt(totalNet)} đ` : '••••••'}
+                </span>
+                <button onClick={() => setShowSalary(v => !v)} title={showSalary ? 'Ẩn số tiền' : 'Hiện số tiền'}
+                  style={{ background: 'none', border: 'none', color: s.muted, cursor: 'pointer', padding: 2, display: 'flex' }}>
+                  {showSalary ? <EyeOff size={12} /> : <Eye size={12} />}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1095,6 +1247,21 @@ function CalendarTab({ year, month, setYear, setMonth, sched, setSched, classes,
           S={s}
         />
       )}
+
+      {showCopyModal && (() => {
+        const pm = month === 1 ? 12 : month - 1
+        const py = month === 1 ? year - 1 : year
+        const prevSched = allSchedules[mk(py, pm)] || {}
+        return (
+          <CopyWeekModal
+            year={year} month={month}
+            prevSchedule={prevSched}
+            onCopy={applyWeekCopy}
+            onClose={() => setShowCopyModal(false)}
+            S={s}
+          />
+        )
+      })()}
     </div>
   )
 }
